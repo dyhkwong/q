@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
+	"github.com/wzshiming/socks5"
 )
 
 // DoQ Error Codes
@@ -57,18 +58,40 @@ func (q *QUIC) Exchange(msg *dns.Msg) (*dns.Msg, error) {
 			q.TLSConfig.NextProtos = []string{"doq"}
 		}
 		log.Debugf("Dialing with QUIC ALPN tokens: %v", q.TLSConfig.NextProtos)
-		conn, err := quic.DialAddr(
-			context.Background(),
-			q.Server,
-			q.TLSConfig,
-			&quic.Config{
-				DisablePathMTUDiscovery: !q.PMTUD,
-			},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("opening quic session to %s: %v", q.Server, err)
+		var qconn *quic.Conn
+		var dialErr error
+		if len(q.Proxy) > 0 {
+			dialer, err := socks5.NewDialer(q.Proxy)
+			if err != nil {
+				return nil, err
+			}
+			conn, err := dialer.DialContext(context.Background(), "udp", q.Server)
+			if err != nil {
+				return nil, err
+			}
+			qconn, dialErr = quic.Dial(
+				context.Background(),
+				conn.(*socks5.UDPConn),
+				&udpAddr{address: q.Server},
+				q.TLSConfig,
+				&quic.Config{
+					DisablePathMTUDiscovery: !q.PMTUD,
+				},
+			)
+		} else {
+			qconn, dialErr = quic.DialAddr(
+				context.Background(),
+				q.Server,
+				q.TLSConfig,
+				&quic.Config{
+					DisablePathMTUDiscovery: !q.PMTUD,
+				},
+			)
 		}
-		q.conn = conn
+		if dialErr != nil {
+			return nil, fmt.Errorf("opening quic session to %s: %v", q.Server, dialErr)
+		}
+		q.conn = qconn
 	}
 
 	// Clients and servers MUST NOT send the edns-tcp-keepalive EDNS(0) Option [RFC7828] in any messages sent

@@ -125,6 +125,7 @@ func newTransport(server string, transportType transport.Type, tlsConfig *tls.Co
 	common := transport.Common{
 		Server:    server,
 		ReuseConn: opts.ReuseConn,
+		Proxy:     strings.Replace(opts.Proxy, "socks5://", "socks5h://", 1),
 	}
 
 	switch transportType {
@@ -132,9 +133,10 @@ func newTransport(server string, transportType transport.Type, tlsConfig *tls.Co
 		if opts.ODoHProxy != "" {
 			log.Debugf("Using ODoH transport with target %s proxy %s", server, opts.ODoHProxy)
 			ts = &transport.ODoH{
-				Common:    common,
-				Proxy:     opts.ODoHProxy,
-				TLSConfig: tlsConfig,
+				Common:      common,
+				Proxy:       opts.ODoHProxy,
+				TLSConfig:   tlsConfig,
+				SOCKS5Proxy: strings.Replace(opts.Proxy, "socks5://", "socks5h://", 1),
 			}
 		} else {
 			log.Debugf("Using HTTP(s) transport: %s", server)

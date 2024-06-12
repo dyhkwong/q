@@ -104,6 +104,7 @@ type Flags struct {
 	Verbose     bool   `short:"v" long:"verbose" description:"Show verbose log messages"`
 	Trace       bool   `long:"trace" description:"Show trace log messages"`
 	ShowVersion bool   `short:"V" long:"version" description:"Show version and exit"`
+	Proxy       string `long:"proxy" description:"SOCKS5 proxy, e.g. socks5://127.0.0.1:1080"`
 }
 
 // ParsePlusFlags parses a list of flags notated by +[no]flag and sets the corresponding opts fields
