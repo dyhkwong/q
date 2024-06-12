@@ -12,6 +12,7 @@ type Transport interface {
 type Common struct {
 	Server    string
 	ReuseConn bool
+	Proxy     string
 }
 
 type Type string

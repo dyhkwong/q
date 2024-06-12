@@ -2,16 +2,19 @@ package transport
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 
 	"github.com/charmbracelet/log"
 	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"github.com/wzshiming/socks5"
 	"golang.org/x/net/http2"
 )
 
@@ -32,23 +35,60 @@ func (h *HTTP) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	if h.conn == nil || !h.ReuseConn {
 		transport := http.DefaultTransport.(*http.Transport)
 		transport.TLSClientConfig = h.TLSConfig
+		if len(h.Proxy) > 0 {
+			transport.DialContext = func(ctx context.Context, _, addr string) (net.Conn, error) {
+				dialer, err := socks5.NewDialer(h.Proxy)
+				if err != nil {
+					return nil, err
+				}
+				return dialer.DialContext(ctx, "tcp", addr)
+			}
+		}
 		h.conn = &http.Client{
 			Transport: transport,
 		}
 		if h.HTTP2 {
 			log.Debug("Using HTTP/2")
-			h.conn.Transport = &http2.Transport{
+			http2Transport := &http2.Transport{
 				TLSClientConfig: h.TLSConfig,
 				AllowHTTP:       true,
 			}
+			if len(h.Proxy) > 0 {
+				http2Transport.DialTLSContext = func(ctx context.Context, _, addr string, cfg *tls.Config) (net.Conn, error) {
+					dialer, err := socks5.NewDialer(h.Proxy)
+					if err != nil {
+						return nil, err
+					}
+					conn, err := dialer.DialContext(ctx, "tcp", addr)
+					if err != nil {
+						return nil, err
+					}
+					return tls.Client(conn, cfg), nil
+				}
+			}
+			h.conn.Transport = http2Transport
 		} else if h.HTTP3 {
 			log.Debug("Using HTTP/3")
-			h.conn.Transport = &http3.Transport{
+			http3Transport := &http3.Transport{
 				TLSClientConfig: h.TLSConfig,
 				QUICConfig: &quic.Config{
 					DisablePathMTUDiscovery: h.NoPMTUd,
 				},
 			}
+			if len(h.Proxy) > 0 {
+				http3Transport.Dial = func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+					dialer, err := socks5.NewDialer(h.Proxy)
+					if err != nil {
+						return nil, err
+					}
+					conn, err := dialer.DialContext(ctx, "udp", addr)
+					if err != nil {
+						return nil, err
+					}
+					return quic.DialEarly(ctx, conn.(*socks5.UDPConn), &udpAddr{address: addr}, tlsCfg, cfg)
+				}
+			}
+			h.conn.Transport = http3Transport
 		}
 	}
 
@@ -126,4 +166,16 @@ func (h *HTTP) Close() error {
 	// Close idle connections for standard transports
 	h.conn.CloseIdleConnections()
 	return nil
+}
+
+type udpAddr struct {
+	address string
+}
+
+func (a *udpAddr) Network() string {
+	return "udp"
+}
+
+func (a *udpAddr) String() string {
+	return a.address
 }

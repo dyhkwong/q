@@ -28,10 +28,12 @@ package transport
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -39,6 +41,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/miekg/dns"
 	"github.com/sthorne/odoh-go"
+	"github.com/wzshiming/socks5"
 )
 
 const ODoHContentType = "application/oblivious-dns-message"
@@ -66,6 +69,8 @@ type ODoH struct {
 	TLSConfig *tls.Config
 
 	conn *http.Client
+
+	SOCKS5Proxy string
 }
 
 func (o *ODoH) Exchange(m *dns.Msg) (*dns.Msg, error) {
@@ -80,10 +85,20 @@ func (o *ODoH) Exchange(m *dns.Msg) (*dns.Msg, error) {
 	}
 
 	if o.conn == nil || !o.ReuseConn {
+		transport := &http.Transport{
+			TLSClientConfig: o.TLSConfig,
+		}
+		if len(o.SOCKS5Proxy) > 0 {
+			transport.DialContext = func(ctx context.Context, _, addr string) (net.Conn, error) {
+				dialer, err := socks5.NewDialer(o.SOCKS5Proxy)
+				if err != nil {
+					return nil, err
+				}
+				return dialer.DialContext(ctx, "tcp", addr)
+			}
+		}
 		o.conn = &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: o.TLSConfig,
-			},
+			Transport: transport,
 		}
 	}
 	resp, err := o.conn.Do(req)

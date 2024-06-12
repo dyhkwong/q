@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/miekg/dns"
+	"github.com/wzshiming/socks5"
 )
 
 // TLS makes a DNS query over TLS
@@ -18,14 +19,32 @@ type TLS struct {
 func (t *TLS) Exchange(msg *dns.Msg) (*dns.Msg, error) {
 	if t.conn == nil || !t.ReuseConn {
 		var err error
-		t.conn, err = tls.DialWithDialer(
-			&net.Dialer{},
-			"tcp",
-			t.Server,
-			t.TLSConfig,
-		)
-		if err != nil {
-			return nil, err
+		if len(t.Proxy) > 0 {
+			host, _, err := net.SplitHostPort(t.Server)
+			if err != nil {
+
+				return nil, err
+			}
+			dialer, err := socks5.NewDialer(t.Proxy)
+			if err != nil {
+				return nil, err
+			}
+			conn, err := dialer.Dial("tcp", t.Server)
+			if err != nil {
+				return nil, err
+			}
+			t.TLSConfig.ServerName = host
+			t.conn = tls.Client(conn, t.TLSConfig)
+		} else {
+			t.conn, err = tls.DialWithDialer(
+				&net.Dialer{},
+				"tcp",
+				t.Server,
+				t.TLSConfig,
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 		if err = t.conn.Handshake(); err != nil {
 			return nil, err
