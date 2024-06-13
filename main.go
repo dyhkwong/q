@@ -360,19 +360,11 @@ All long form (--) flags can be toggled with the dig-standard +[no]flag notation
 			opts.Server[0] = os.Getenv(defaultServerVar)
 			log.Debugf("Using %s from %s environment variable", opts.Server, defaultServerVar)
 		} else {
-			log.Debugf("No server specified or %s set, using /etc/resolv.conf", defaultServerVar)
-			conf, err := dns.ClientConfigFromFile("/etc/resolv.conf")
-			if err != nil {
-				opts.Server[0] = "https://cloudflare-dns.com/dns-query"
-				log.Debugf("no server set, using %s", opts.Server)
+			if server := getSystemDNS(); len(server) > 0 {
+				opts.Server[0] = server
 			} else {
-				if len(conf.Servers) == 0 {
-					opts.Server[0] = "https://cloudflare-dns.com/dns-query"
-					log.Debugf("no server set, using %s", opts.Server)
-				} else {
-					opts.Server[0] = conf.Servers[0]
-					log.Debugf("found server %s from /etc/resolv.conf", opts.Server)
-				}
+				log.Debugf("no server set, using %s", server)
+				opts.Server[0] = "https://cloudflare-dns.com/dns-query"
 			}
 		}
 	}
